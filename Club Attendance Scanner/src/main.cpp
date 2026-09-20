@@ -1,24 +1,42 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <MFRC522.h>
+#include "sd_read_write.h"
+#include "SD_MMC.h"
 
-#define PIN_SCK   41
-#define PIN_MOSI  42
-#define PIN_MISO   2
-#define PIN_SS     1
-#define PIN_RST   21
+#define PIN_SCK    41
+#define PIN_MOSI   42
+#define PIN_MISO    2
+#define PIN_SS      1
+#define PIN_RST    21
+#define SD_MMC_CMD 38
+#define SD_MMC_CLK 39
+#define SD_MMC_D0  40
 
 #define status_time 3000 //Used to let user know the reader is still active
 
 MFRC522 rfid(PIN_SS, PIN_RST); //Initializes reader object
 
 void setup() {
-  //Initialzes Reader, SPI, and serial
+  //Initialzes Reader, SPI, SD card, and serial
   Serial.begin(115200);
-  delay(1000); //Delay to allow hardware check to pass without getting cutoff by startup
   SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_SS);
+  SD_MMC.setPins(SD_MMC_CLK, SD_MMC_CMD , SD_MMC_D0);
   rfid.PCD_Init();
-  delay(50);
+  delay(1000);
+
+  //Initializes SD card and creates a file if it doesn't exist
+  if (!SD_MMC.begin("/sdcard", true, true, SDMMC_FREQ_DEFAULT, 5)) {
+    Serial.println("SD card mount failed");
+    return;
+  }
+
+  uint8_t cardType = SD_MMC.cardType();
+  if(cardType == CARD_NONE){
+    Serial.println("No SD_MMC card attached");
+    return;
+  }
+  
 
   //Status lines to make debugging easier
   Serial.println();
