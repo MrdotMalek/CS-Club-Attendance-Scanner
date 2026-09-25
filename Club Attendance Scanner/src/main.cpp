@@ -31,11 +31,15 @@ void setup() {
     return;
   }
 
+  //Checks to see if an SD card is present and prints if there isnt.  
   uint8_t cardType = SD_MMC.cardType();
   if(cardType == CARD_NONE){
     Serial.println("No SD_MMC card attached");
     return;
   }
+  //Prints SD card size
+  uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
+  Serial.printf("SD_MMC Card Size: %lluMB\n", cardSize);
   
 
   //Status lines to make debugging easier
