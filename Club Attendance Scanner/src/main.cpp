@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <MFRC522.h>
-#include "sd_read_write.h"
-#include "SD_MMC.h"
+#include <sd_read_write.h>
+#include <SD_MMC.h>
+#include <WiFi.h>
+#include <time.h>
 
 #define PIN_SCK    41
 #define PIN_MOSI   42
@@ -16,6 +18,102 @@
 #define status_time 3000 //Used to let user know the reader is still active
 
 MFRC522 rfid(PIN_SS, PIN_RST); //Initializes reader object
+
+//Wifi setup once to set clock for SD card timestamping.
+
+const char* wifi_ssid = "";
+const char* wifi_password = "";
+const char* timezone = "EST5EDT,M3.2.0,M11.1.0";
+const char* log_path = "/attendance_log.csv";
+
+bool sdReady = false; //Flag to indicate if SD card is ready for writing
+
+//Formats the time in the way excel reads it
+String timestamp() {
+  time_t now = time(nullptr); //gets time from esp32
+  struct tm tmv; //holds a calendar time structure
+  localtime_r(&now, &tmv); //converts time_t to calendar time structure
+  char buff[20];
+  strftime(buff, sizeof(buff), "%Y-%m-%d %H:%M:%S", &tmv); //stores the data from tmv in YYYY-MM-DD HH:MM:SS format
+  return String(buff);
+}
+
+//Mounts the SD card and checks if it is present. Returns true if it is ready for writing, false if not.
+bool initSD() {
+  if (!SD_MMC.begin("/sdcard", true, false, SDMMC_FREQ_DEFAULT, 5)) { 
+    Serial.println("SD card mount failed");
+    return false;
+  }
+  if (SD_MMC.cardType() == CARD_NONE) {
+    Serial.println("No SD_MMC card attached");
+    return false;
+  }
+  Serial.printf("SD_MMC Card Size: %lluMB\n", 
+    SD_MMC.cardSize() / (1024ULL * 1024ULL)); //If mount is successful, prints the size of the SD card in MB
+  return true;
+}
+
+//Connects to wifi and sets the clock for timestamping, then disconnects.
+void syncClock() {
+  if (strlen(wifi_ssid) == 0) {
+    Serial.println("No wifi ssid provided, skipping clock sync");
+    return;
+  }
+
+  WiFi.begin(wifi_ssid, wifi_password);
+  unsigned long t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 10000) { //10 second timeout
+    delay(250);
+    Serial.print(".");
+    }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Failed to connect to wifi, skipping clock sync");
+    return;
+  }
+  Serial.println("Connected to wifi, syncing clock...");
+
+  configTzTime(timezone, "pool.ntp.org", "time.nist.gov");
+  struct tm tmv;
+  if (getLocalTime(&tmv, 10000)) {
+    Serial.printf("Clock set: %s\n", timestamp().c_str());
+  } else {
+    Serial.println("Failed to get time from NTP server");
+  }
+
+  WiFi.disconnect(true); //Disconnects from wifi to save power and reduce interference with RFID reader
+  WiFi.mode(WIFI_OFF);
+}
+
+//Write the header row only if the file doesnt exit
+void ensureLogFile() {
+  if (SD_MMC.exists(log_path)) {
+    Serial.println("Log file already exists");
+    return;
+  }
+  File f = SD_MMC.open(log_path, FILE_WRITE);
+  if (!f) {
+    Serial.println("Failed to create log file");
+    sdReady = false;
+    return;
+  }
+  f.println("Timestamp,UID,Type");
+  f.close();
+  Serial.println("Log file created");
+}
+
+//Adds a line to the file then closes it to ensure buffered rows wont die without power
+bool logScan (const String& ts, const String& uid) {
+  if (!sdReady) return false;
+  File f = SD_MMC.open(log_path, FILE_APPEND);
+  if (!f) {
+    Serial.println("Failed to open log file for appending");
+    return false;
+  }
+  f.print(ts); f.print(","); f.print(uid); f.close();
+  return true;
+}
+
 
 void setup() {
   //Initialzes Reader, SPI, SD card, and serial
