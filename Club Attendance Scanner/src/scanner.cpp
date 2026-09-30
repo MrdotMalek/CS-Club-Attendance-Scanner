@@ -64,6 +64,19 @@ static bool initSD() {
   return true;
 }
 
+//Wifi Status helper function to print the status of the wifi connection
+static const char* wifiStatusName(wl_status_t s) {
+  switch (s) {
+    case WL_IDLE_STATUS:     return "IDLE";
+    case WL_NO_SSID_AVAIL:   return "NO_SSID_AVAIL (network not found)";
+    case WL_SCAN_COMPLETED:  return "SCAN_COMPLETED";
+    case WL_CONNECTED:       return "CONNECTED";
+    case WL_CONNECT_FAILED:  return "CONNECT_FAILED (wrong password / rejected)";
+    case WL_CONNECTION_LOST: return "CONNECTION_LOST";
+    case WL_DISCONNECTED:    return "DISCONNECTED";
+    default:                 return "unknown";
+  }
+}
 //Connects to wifi and sets the clock for timestamping, then disconnects.
 static void syncClock() {
   if (strlen(wifi_ssid) == 0) {
@@ -77,16 +90,40 @@ static void syncClock() {
 
 
   unsigned long t0 = millis();
+  wl_status_t status = WL_IDLE_STATUS;
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 10000) { //10 second timeout
+    wl_status_t newStatus = WiFi.status();
+    if (newStatus != status) {
+      status = newStatus;
+      Serial.printf("WiFi status: %d\n", status);
+    }
     delay(250);
     Serial.print(".");
-    }
+  }
+  Serial.println();
+
+    
 
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Failed to connect to wifi.");
+    Serial.printf("Wi-Fi FAILED after %lu ms - %s\n",
+                  millis() - t0, wifiStatusName(WiFi.status()));
     WiFi.mode(WIFI_OFF);
     return;
   }
+
+  //Prints the connection info and sets the clock
+  Serial.printf("Wi-Fi CONNECTED in %lu ms\n", millis() - t0);
+  Serial.printf("  IP:      %s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("  gateway: %s\n", WiFi.gatewayIP().toString().c_str());
+  Serial.printf("  DNS:     %s\n", WiFi.dnsIP().toString().c_str());
+  Serial.printf("  RSSI:    %d dBm\n", WiFi.RSSI());
+
+  //Check if DNS is working by resolving pool.ntp.org
+  IPAddress ntpIP;
+  if (WiFi.hostByName("pool.ntp.org", ntpIP))
+    Serial.printf("  DNS OK:  pool.ntp.org -> %s\n", ntpIP.toString().c_str());
+  else
+    Serial.println(F("  DNS FAILED - connected but no working internet"));
 
   configTzTime(timezone, "pool.ntp.org", "time.nist.gov");
 
@@ -155,8 +192,7 @@ String uidString() {
 }
 
 bool scannerBegin() {
-     //Initialzes Reader, SPI, SD card, and serial
-  Serial.begin(115200);
+  //Initialzes Reader, SPI, SD card, and serial
   SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_SS);
   SD_MMC.setPins(SD_CLK, SD_CMD , SD_D0);
   rfid.PCD_Init();
@@ -197,6 +233,8 @@ bool scannerBegin() {
 
   Serial.println(F("Antenna on at max gain."));
   Serial.println(F("Lay a tag flat on the spiral trace.\n"));
+
+  return sdReady;
 }
 
 bool readTap(Tap& tap) {

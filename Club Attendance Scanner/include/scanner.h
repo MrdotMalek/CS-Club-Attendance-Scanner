@@ -12,6 +12,6 @@ bool readTap(Tap &tap);
 
 String timestamp();
 
-bool logscan(const String& ts, const String& uid);
+bool logScan(const String& ts, const String& uid);
 
 bool loggingReady();
