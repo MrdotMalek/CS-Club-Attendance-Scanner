@@ -158,16 +158,31 @@ static void ensureLogFile() {
 
 //Adds a line to the file then closes it to ensure buffered rows wont die without power
 bool logScan (const String& ts, const String& uid) {
-  if (!sdReady) return false;
-  File f = SD_MMC.open(log_path, FILE_APPEND);
-  if (!f) {
-    Serial.println("Failed to open log file for appending");
+  if (!sdReady) {
+    Serial.println(F("SD card not ready, cannot log scan"));
     return false;
   }
-  f.print(ts); 
-  f.print(","); 
-  f.println(uid); 
+
+  File f = SD_MMC.open(log_path, FILE_APPEND);
+  if (!f) {
+    Serial.printf(" logScan: Open failed. Exists=%d used=%llu/%llu bytes \n", 
+                  SD_MMC.exists(log_path), 
+                  SD_MMC.usedBytes(), 
+                  SD_MMC.totalBytes());
+    return false;
+  }
+
+  size_t n = f.print(ts);
+  n += f.print(",");
+  n += f.println(uid);
   f.close();
+
+  if (n == 0) {
+    Serial.println(F("logScan: Write failed ,likely write protected SD card"));
+    return false;
+  }
+
+  Serial.printf(" logged %u bytes\n", (unsigned)n);
   return true;
 }
 

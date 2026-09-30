@@ -19,7 +19,7 @@ void loop() {
     String ts = timestamp();
     Serial.printf("%s UID: %s type: %s\n",
                   ts.c_str(), tap.uid.c_str(), tap.type.c_str());
-    if (logScan(ts, tap.uid)) {
+    if (!logScan(ts, tap.uid)) {
       Serial.println(F("Failed to log scan"));
     }
   }
